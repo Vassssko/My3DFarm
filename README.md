@@ -1,0 +1,3 @@
+﻿# SklaDom-Farm
+
+Project workspace.
