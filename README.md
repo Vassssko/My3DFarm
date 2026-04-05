@@ -42,6 +42,11 @@ npm run test:all      # both
 
 Moonraker is not required for automated tests; E2E uses routed mocks (see `e2e/` and `src/test/`).
 
+## Versions and commits
+
+- Commit style and how **semver** / **git tags** (`v0.x.y`) are produced: [CONTRIBUTING.md](CONTRIBUTING.md).
+- On each push to `main`, [Release Please](https://github.com/googleapis/release-please) updates or opens a **Release PR**; after you merge it, GitHub gets a matching tag and release. Changelog: [CHANGELOG.md](CHANGELOG.md).
+
 ## References
 
 - [Moonraker external API](https://moonraker.readthedocs.io/en/latest/external_api/) — HTTP endpoints, JSON shapes, authentication
