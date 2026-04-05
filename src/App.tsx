@@ -1,21 +1,33 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { AppShellHeader } from "./components/AppShellHeader";
-import { PrinterDiscovery } from "./components/PrinterDiscovery";
-import { PrinterList } from "./components/PrinterList";
 import { applyThemeClass, getStoredThemeMode } from "./lib/theme";
-import { usePrinterStore } from "./store/printerStore";
+import { FarmPage } from "./routes/FarmPage";
+import { PrinterHubPage } from "./routes/PrinterHubPage";
 import { useUpstreamVersionsStore } from "./store/upstreamVersionsStore";
 
+function RoutedMain() {
+  const location = useLocation();
+  return (
+    <AppErrorBoundary key={location.pathname}>
+      <Suspense
+        fallback={
+          <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--text-secondary)]">
+            Loading…
+          </div>
+        }
+      >
+        <Routes>
+          <Route element={<FarmPage />} path="/" />
+          <Route element={<PrinterHubPage />} path="/printer/:printerId" />
+        </Routes>
+      </Suspense>
+    </AppErrorBoundary>
+  );
+}
+
 export default function App() {
-  const printers = usePrinterStore((s) => s.printers);
-  const setGridEditMode = usePrinterStore((s) => s.setGridEditMode);
-
-  useEffect(() => {
-    if (printers.length === 0) {
-      setGridEditMode(false);
-    }
-  }, [printers.length, setGridEditMode]);
-
   useEffect(() => {
     /** Block native WebView/browser context menu app-wide until we ship a custom one. */
     const blockContextMenu = (e: Event) => {
@@ -42,11 +54,13 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <AppShellHeader />
-      <main className="flex min-h-0 flex-1 flex-col">
-        {printers.length === 0 ? <PrinterDiscovery /> : <PrinterList />}
-      </main>
-    </div>
+    <BrowserRouter>
+      <div className="flex h-full min-h-0 flex-col">
+        <AppShellHeader />
+        <main className="flex min-h-0 flex-1 flex-col">
+          <RoutedMain />
+        </main>
+      </div>
+    </BrowserRouter>
   );
 }

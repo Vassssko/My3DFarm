@@ -26,4 +26,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 mdns-sd = "0.11"
 if-addrs = "0.13"
+# Pure-Rust SSH client — avoids vendored OpenSSL on Windows (no Perl / openssl-sys build).
+russh = "0.50"
 

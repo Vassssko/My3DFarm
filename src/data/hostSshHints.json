@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "raspberry-pi",
+      "labelKey": "hostHints.raspberryPi",
+      "priority": 40,
+      "match": { "hayIncludesAll": ["raspberry", "bcm"] },
+      "suggestedUsername": "pi"
+    },
+    {
+      "id": "raspberry-pi-alt",
+      "labelKey": "hostHints.raspberryPi",
+      "priority": 35,
+      "match": { "hayIncludesAll": ["raspberry pi"] },
+      "suggestedUsername": "pi"
+    },
+    {
+      "id": "orange-pi",
+      "labelKey": "hostHints.orangePi",
+      "priority": 38,
+      "match": { "hayIncludesAll": ["orange", "sunxi"] },
+      "suggestedUsername": "orangepi"
+    },
+    {
+      "id": "btt-cb1",
+      "labelKey": "hostHints.bttCb",
+      "priority": 36,
+      "match": { "hayIncludesAll": ["bigtreetech", "cb1"] },
+      "suggestedUsername": "biqu"
+    },
+    {
+      "id": "generic-arm-sbc",
+      "labelKey": "hostHints.genericArm",
+      "priority": 5,
+      "match": { "hayIncludesAll": ["aarch64"] },
+      "suggestedUsername": "pi"
+    }
+  ]
+}

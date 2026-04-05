@@ -10,7 +10,10 @@ import {
 import { flushSync } from "react-dom";
 import { getFarmGridColumns } from "../lib/farmGridColumns";
 import { usePrinterStore, type SavedPrinter } from "../store/printerStore";
+import { processFleetDeferredQueue } from "../lib/processFleetDeferredQueue";
+import { useFleetSelectionStore } from "../store/fleetSelectionStore";
 import { AddPrinterTile } from "./AddPrinterTile";
+import { FleetFarmToolbar } from "./FleetFarmToolbar";
 import { PrinterCard } from "./PrinterCard";
 
 type DocumentWithViewTransition = Document & {
@@ -144,6 +147,22 @@ export function PrinterList() {
     completeRemovalExit();
   }, [reduceMotion, removalExitIds, completeRemovalExit]);
 
+  const setFleetSelectMode = useFleetSelectionStore((s) => s.setSelectMode);
+  useEffect(() => {
+    if (gridEditMode) {
+      setFleetSelectMode(false);
+    }
+  }, [gridEditMode, setFleetSelectMode]);
+
+  const printersRef = useRef(printers);
+  printersRef.current = printers;
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void processFleetDeferredQueue(printersRef.current);
+    }, 45_000);
+    return () => clearInterval(id);
+  }, []);
+
   const handleFlyOutDone = useCallback(
     (id: string) => {
       const batch = exitBatchRef.current;
@@ -161,6 +180,7 @@ export function PrinterList() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-4 pb-4 pt-3">
+      <FleetFarmToolbar />
       <motion.div className="min-h-0 flex-1 overflow-y-auto" layoutScroll>
         <motion.div
           animate={{ opacity: 1 }}

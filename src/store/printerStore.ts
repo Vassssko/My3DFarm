@@ -8,6 +8,12 @@ export type SavedPrinter = {
   baseUrl: string;
   apiKey?: string;
   displayName?: string;
+  /** Override SSH target when it differs from Moonraker URL host. */
+  sshHost?: string;
+  sshPort?: number;
+  sshUser?: string;
+  /** Hint only — set after successful key deploy (not verified continuously). */
+  sshKeyInstalled?: boolean;
 };
 
 type PrinterState = {

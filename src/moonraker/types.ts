@@ -34,3 +34,41 @@ export type DiscoveredHostPayload = {
   label: string;
   sources: string[];
 };
+
+/** Moonraker GET /machine/system_info — shape varies by version; keep loose. */
+export type MoonrakerMachineSystemInfo = {
+  system_info?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+/** Moonraker GET /machine/update/status — shape varies; often version_info map. */
+export type MoonrakerMachineUpdateStatus = {
+  version_info?: Record<string, unknown>;
+  busy?: boolean;
+  [key: string]: unknown;
+};
+
+export type MoonrakerFileListEntry = {
+  path?: string;
+  dirname?: string;
+  filename?: string;
+  modified?: number;
+  size?: number;
+  [key: string]: unknown;
+};
+
+/** Moonraker GET /server/history/list — job row (subset; Moonraker adds more fields). */
+export type MoonrakerHistoryJob = {
+  job_id?: string;
+  filename?: string;
+  status?: string;
+  start_time?: number;
+  /** Unix seconds when the job finished; missing/null while in progress */
+  end_time?: number | null;
+  [key: string]: unknown;
+};
+
+export type MoonrakerHistoryListResponse = {
+  count: number;
+  jobs: MoonrakerHistoryJob[];
+};

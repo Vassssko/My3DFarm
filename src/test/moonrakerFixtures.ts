@@ -56,3 +56,23 @@ export const mockObjectsQueryError = {
     print_stats: { state: "standby" },
   },
 };
+
+/** One completed job so idle duration can use history end_time (timestamps are arbitrary past). */
+export const mockHistoryListOneCompleted = {
+  count: 1,
+  jobs: [
+    {
+      job_id: "0000A1",
+      filename: "benchy.gcode",
+      status: "completed",
+      start_time: 1_700_000_000,
+      end_time: 1_700_003_600,
+      print_duration: 3500,
+      total_duration: 3600,
+      filament_used: 12.3,
+      metadata: {},
+      auxiliary_data: [],
+      exists: true,
+    },
+  ],
+};

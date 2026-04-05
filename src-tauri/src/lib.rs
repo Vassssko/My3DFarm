@@ -1,4 +1,5 @@
 mod discovery;
+mod ssh;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -32,7 +33,8 @@ async fn moonraker_proxy_request(req: MoonrakerProxyRequest) -> Result<Moonraker
         return Err("URL must use http:// or https://".to_string());
     }
     let method = req.method.to_uppercase();
-    let timeout_ms = req.timeout_ms.unwrap_or(10_000).clamp(1_000, 60_000);
+    // Refresh/upgrade can run git/apt for many minutes; cap at 5 min.
+    let timeout_ms = req.timeout_ms.unwrap_or(10_000).clamp(1_000, 300_000);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
         .build()
@@ -127,7 +129,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             discover_moonraker_hosts,
             stop_discovery_scan,
-            moonraker_proxy_request
+            moonraker_proxy_request,
+            ssh::ssh_ensure_identity,
+            ssh::ssh_deploy_authorized_key,
+            ssh::ssh_mass_deploy_keys,
+            ssh::ssh_exec_preset,
+            ssh::ssh_probe_pubkey,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

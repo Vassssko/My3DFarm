@@ -1,8 +1,9 @@
 import clsx from "clsx";
-import { motion } from "framer-motion";
-import { ArrowUp, Minus, Plus } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowUp, Check, Minus, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { isDeviceVersionBehindTag } from "../lib/semverFirmware";
 import { isDirtyVersion, stripVersionForDisplay } from "../lib/versionLabel";
 import { enqueueFleetSnapshot } from "../moonraker/fleetSnapshotQueue";
@@ -16,6 +17,8 @@ import {
   formatStatusTooltipTitle,
   resolvePrinterStatusTooltip,
 } from "../moonraker/statusTooltip";
+import { useFleetInventoryStore } from "../store/fleetInventoryStore";
+import { useFleetSelectionStore } from "../store/fleetSelectionStore";
 import { usePrinterStore, type SavedPrinter } from "../store/printerStore";
 import { useUpstreamVersionsStore } from "../store/upstreamVersionsStore";
 import { StatusDot, type StatusDotKind } from "./StatusDot";
@@ -135,6 +138,8 @@ export function PrinterCard({
   editMode?: boolean;
   className?: string;
 }) {
+  const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const { t, i18n } = useTranslation();
   const lang = i18n.resolvedLanguage ?? i18n.language;
   const updatePrinter = usePrinterStore((s) => s.updatePrinter);
@@ -144,6 +149,25 @@ export function PrinterCard({
     s.newFromDiscoveryIds.includes(printer.id),
   );
   const isPendingRemoval = usePrinterStore((s) => s.pendingRemovalIds.includes(printer.id));
+  const fleetSelectMode = useFleetSelectionStore((s) => s.selectMode && !editMode);
+  const fleetSelected = useFleetSelectionStore((s) => s.selectedIds.includes(printer.id));
+  const toggleFleetSelect = useFleetSelectionStore((s) => s.toggle);
+  const fleetInv = useFleetInventoryStore((s) => s.byId[printer.id]);
+
+  const fleetPendingTotal =
+    fleetInv?.reachable === true
+      ? (fleetInv.hostPackagesPending ?? 0) + fleetInv.managedSoftwareUpdates
+      : 0;
+  const showFleetPendingBadge = fleetInv?.reachable === true && fleetPendingTotal > 0;
+  const fleetPendingTitle = useMemo(() => {
+    if (!fleetInv?.reachable) {
+      return undefined;
+    }
+    return t("fleet.pendingTooltip", {
+      software: fleetInv.managedSoftwareUpdates,
+      host: fleetInv.hostPackagesPending ?? 0,
+    });
+  }, [fleetInv, t]);
 
   const onCardContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -192,34 +216,31 @@ export function PrinterCard({
     };
   }, [printer.id, printer.baseUrl, printer.apiKey, fallback]);
 
-  const [idleSince, setIdleSince] = useState<number | null>(null);
+  const handlePrimaryActivate = useCallback(() => {
+    if (fleetSelectMode) {
+      toggleFleetSelect(printer.id);
+      return;
+    }
+    if (!editMode) {
+      navigate(`/printer/${printer.id}`);
+    }
+  }, [editMode, fleetSelectMode, navigate, printer.id, toggleFleetSelect]);
 
-  useEffect(() => {
-    if (!snap) {
-      return;
-    }
-    if (snap.isActivelyPrinting || snap.status === "printing") {
-      setIdleSince(null);
-      return;
-    }
-    if (snap.isIdleReady) {
-      setIdleSince((prev) => prev ?? Date.now());
-    } else {
-      setIdleSince(null);
-    }
-  }, [snap]);
+  const idleAnchorUnixSec =
+    snap && snap.isIdleReady && snap.lastPrintEndUnixSec != null ? snap.lastPrintEndUnixSec : null;
 
   const [idleSec, setIdleSec] = useState(0);
   useEffect(() => {
-    if (idleSince === null) {
+    if (idleAnchorUnixSec === null) {
       setIdleSec(0);
       return;
     }
-    const fn = () => setIdleSec(Math.floor((Date.now() - idleSince) / 1000));
+    const fn = () =>
+      setIdleSec(Math.max(0, Math.floor(Date.now() / 1000 - idleAnchorUnixSec)));
     fn();
     const id = setInterval(fn, 1000);
     return () => clearInterval(id);
-  }, [idleSince]);
+  }, [idleAnchorUnixSec]);
 
   if (!snap) {
     return (
@@ -227,10 +248,28 @@ export function PrinterCard({
         <motion.div
           className={clsx(
             "glass glass-interactive relative flex h-full min-h-[115px] flex-col rounded-xl p-[11px]",
+            !editMode && "cursor-pointer",
+            fleetSelected && fleetSelectMode && "ring-2 ring-[var(--accent)]/70",
             className,
           )}
           layout={false}
+          onClick={editMode ? undefined : handlePrimaryActivate}
           onContextMenu={onCardContextMenu}
+          onKeyDown={
+            editMode
+              ? undefined
+              : (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handlePrimaryActivate();
+                  }
+                }
+          }
+          role={editMode ? undefined : "button"}
+          tabIndex={editMode ? undefined : 0}
+          title={
+            editMode ? undefined : fleetSelectMode ? t("fleet.selectToToggle") : t("printer.openHub")
+          }
         >
           <EditFarmCornerBadge
             confirmDiscoveryPrinter={confirmDiscoveryPrinter}
@@ -241,6 +280,32 @@ export function PrinterCard({
             printerId={printer.id}
             t={t}
           />
+          {fleetSelectMode ? (
+            <span
+              aria-hidden
+              className={clsx(
+                "pointer-events-none absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded-md border-2",
+                fleetSelected
+                  ? "border-[var(--accent)] bg-[var(--accent)]/25"
+                  : "border-[var(--glass-border)] bg-[var(--glass-bg)]/85",
+              )}
+            >
+              {fleetSelected ? (
+                <Check aria-hidden className="size-3.5 text-[var(--accent)]" strokeWidth={2.75} />
+              ) : null}
+            </span>
+          ) : null}
+          {showFleetPendingBadge ? (
+            <span
+              className={clsx(
+                "pointer-events-none absolute z-10 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white shadow-sm",
+                fleetSelectMode ? "bottom-2 left-2" : "bottom-2 right-2",
+              )}
+              title={fleetPendingTitle}
+            >
+              {fleetPendingTotal > 99 ? "99+" : fleetPendingTotal}
+            </span>
+          ) : null}
           <motion.div
             animate={
               editMode
@@ -278,7 +343,7 @@ export function PrinterCard({
 
   const secondaryLine = snap.printFilename
     ? t("printer.printing", { file: snap.printFilename })
-    : snap.isIdleReady && idleSince !== null
+    : snap.isIdleReady && snap.lastPrintEndUnixSec != null
       ? t("printer.idleWaiting", { duration: formatWaitDuration(idleSec, lang) })
       : snap.isIdleReady
         ? t("printer.idleJustNow")
@@ -318,12 +383,31 @@ export function PrinterCard({
         animate={{ opacity: 1, y: 0 }}
         className={clsx(
           "glass glass-interactive relative flex h-full min-h-[115px] flex-col rounded-xl p-[11px]",
+          !editMode && "cursor-pointer",
+          fleetSelected && fleetSelectMode && "ring-2 ring-[var(--accent)]/70",
           className,
         )}
         initial={{ opacity: 0, y: 6 }}
         layout={false}
+        onClick={editMode ? undefined : handlePrimaryActivate}
         onContextMenu={onCardContextMenu}
+        onKeyDown={
+          editMode
+            ? undefined
+            : (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handlePrimaryActivate();
+                }
+              }
+        }
+        role={editMode ? undefined : "button"}
+        tabIndex={editMode ? undefined : 0}
+        title={
+          editMode ? undefined : fleetSelectMode ? t("fleet.selectToToggle") : t("printer.openHub")
+        }
         transition={{ duration: 0.22 }}
+        whileTap={editMode || reduceMotion ? undefined : { scale: 0.98 }}
       >
         <EditFarmCornerBadge
           confirmDiscoveryPrinter={confirmDiscoveryPrinter}
@@ -334,6 +418,32 @@ export function PrinterCard({
           printerId={printer.id}
           t={t}
         />
+        {fleetSelectMode ? (
+          <span
+            aria-hidden
+            className={clsx(
+              "pointer-events-none absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded-md border-2",
+              fleetSelected
+                ? "border-[var(--accent)] bg-[var(--accent)]/25"
+                : "border-[var(--glass-border)] bg-[var(--glass-bg)]/85",
+            )}
+          >
+            {fleetSelected ? (
+              <Check aria-hidden className="size-3.5 text-[var(--accent)]" strokeWidth={2.75} />
+            ) : null}
+          </span>
+        ) : null}
+        {showFleetPendingBadge ? (
+          <span
+            className={clsx(
+              "pointer-events-none absolute z-10 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white shadow-sm",
+              fleetSelectMode ? "bottom-2 left-2" : "bottom-2 right-2",
+            )}
+            title={fleetPendingTitle}
+          >
+            {fleetPendingTotal > 99 ? "99+" : fleetPendingTotal}
+          </span>
+        ) : null}
         <motion.div
           animate={
             editMode
@@ -458,7 +568,12 @@ export function PrinterCard({
       </dl>
 
       {snap.status === "offline" && snap.offlineDetail === "auth" ? (
-        <div className="mt-2 border-t border-[var(--glass-border)] pt-2">
+        <div
+          className="mt-2 border-t border-[var(--glass-border)] pt-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          role="presentation"
+        >
           <p className="text-[11px] leading-snug text-[var(--warning)]">{t("printer.offlineAuthHint")}</p>
           <div className="mt-1.5 flex flex-col gap-1.5">
             <input

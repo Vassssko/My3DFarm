@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  mockHistoryListOneCompleted,
   mockObjectsList,
   mockObjectsQueryPrinting,
   mockObjectsQueryReady,
@@ -49,6 +50,9 @@ export async function installMoonrakerPlaywrightMock(
     }
     if (path === "/printer/objects/query" && method === "POST") {
       return json(query);
+    }
+    if (path === "/server/history/list") {
+      return json(mockHistoryListOneCompleted);
     }
     return route.fulfill({ status: 404, body: "not found" });
   });

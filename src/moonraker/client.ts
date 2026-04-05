@@ -1,6 +1,10 @@
 import { pushDebugEvent } from "../lib/debugRingBuffer";
 import { isTauri } from "../lib/isTauri";
 import type {
+  MoonrakerFileListEntry,
+  MoonrakerHistoryListResponse,
+  MoonrakerMachineSystemInfo,
+  MoonrakerMachineUpdateStatus,
   MoonrakerObjectsList,
   MoonrakerObjectsQueryResult,
   MoonrakerPrinterInfo,
@@ -10,6 +14,9 @@ import type {
 
 /** Farm / Wi‑Fi Pis often need more time; parallel cards multiply load on each host. */
 export const MOONRAKER_FETCH_TIMEOUT_MS = 10_000;
+
+/** Moonraker POST /machine/update/refresh|upgrade can run git fetch and package scans for a long time. */
+export const MOONRAKER_UPDATE_MUTATION_TIMEOUT_MS = 180_000;
 
 const MOONRAKER_MAX_PARALLEL = 12;
 let moonrakerSlotsInUse = 0;
@@ -71,16 +78,18 @@ async function moonrakerFetchViaRust(
     apiKey?: string;
     method?: string;
     body?: string;
+    timeoutMs?: number;
   },
 ): Promise<Response> {
   const { invoke } = await import("@tauri-apps/api/core");
+  const timeoutMs = opts.timeoutMs ?? MOONRAKER_FETCH_TIMEOUT_MS;
   const out = await invoke<{ status: number; body: string }>("moonraker_proxy_request", {
     req: {
       method: opts.method ?? "GET",
       url: fullUrl,
       body: opts.body,
       apiKey: opts.apiKey,
-      timeoutMs: MOONRAKER_FETCH_TIMEOUT_MS,
+      timeoutMs,
     },
   });
   return new Response(out.body, {
@@ -97,13 +106,16 @@ async function moonrakerFetch(
     method?: string;
     body?: string;
     extraHeaders?: Record<string, string>;
+    /** Override default 10s (e.g. long-running update manager calls). */
+    timeoutMs?: number;
   } = {},
 ): Promise<Response> {
   await takeMoonrakerSlot();
   const url = `${normalizeBaseUrl(baseUrl)}${path.startsWith("/") ? path : `/${path}`}`;
   const method = opts.method ?? "GET";
+  const timeoutMs = opts.timeoutMs ?? MOONRAKER_FETCH_TIMEOUT_MS;
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), MOONRAKER_FETCH_TIMEOUT_MS);
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     if (isTauri()) {
       if (opts.extraHeaders && Object.keys(opts.extraHeaders).length > 0) {
@@ -115,6 +127,7 @@ async function moonrakerFetch(
         apiKey: opts.apiKey,
         method,
         body: opts.body,
+        timeoutMs,
       });
     }
     return await fetch(url, {
@@ -215,6 +228,21 @@ export async function fetchObjectsList(
   return readMoonrakerBody<MoonrakerObjectsList>(r);
 }
 
+/** Moonraker GET /server/history/list — newest jobs first when order=desc. */
+export async function fetchHistoryList(
+  baseUrl: string,
+  apiKey?: string,
+  opts?: { limit?: number },
+): Promise<MoonrakerHistoryListResponse> {
+  const limit = opts?.limit ?? 30;
+  const q = new URLSearchParams({ limit: String(limit), order: "desc" });
+  const r = await moonrakerFetch(baseUrl, `/server/history/list?${q.toString()}`, { apiKey });
+  if (!r.ok) {
+    throw new Error(`history/list ${r.status}`);
+  }
+  return readMoonrakerBody<MoonrakerHistoryListResponse>(r);
+}
+
 export async function fetchObjectsQuery(
   baseUrl: string,
   objects: Record<string, string[] | null>,
@@ -230,6 +258,125 @@ export async function fetchObjectsQuery(
     throw new Error(`objects/query ${r.status}`);
   }
   return readMoonrakerBody<MoonrakerObjectsQueryResult>(r);
+}
+
+export async function fetchMachineSystemInfo(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<MoonrakerMachineSystemInfo> {
+  const r = await moonrakerFetch(baseUrl, "/machine/system_info", { apiKey });
+  if (!r.ok) {
+    throw new Error(`system_info ${r.status}`);
+  }
+  return readMoonrakerBody<MoonrakerMachineSystemInfo>(r);
+}
+
+export async function fetchMachineUpdateStatus(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<MoonrakerMachineUpdateStatus> {
+  const r = await moonrakerFetch(baseUrl, "/machine/update/status", { apiKey });
+  if (!r.ok) {
+    throw new Error(`update/status ${r.status}`);
+  }
+  return readMoonrakerBody<MoonrakerMachineUpdateStatus>(r);
+}
+
+/** POST /machine/update/refresh — CPU-heavy; call when the user asks to refresh. */
+export async function postMachineUpdateRefresh(
+  baseUrl: string,
+  apiKey?: string,
+  name?: string | null,
+): Promise<MoonrakerMachineUpdateStatus> {
+  const body =
+    name === undefined || name === null || name === ""
+      ? JSON.stringify({})
+      : JSON.stringify({ name });
+  const r = await moonrakerFetch(baseUrl, "/machine/update/refresh", {
+    apiKey,
+    method: "POST",
+    body,
+    extraHeaders: { "Content-Type": "application/json" },
+    timeoutMs: MOONRAKER_UPDATE_MUTATION_TIMEOUT_MS,
+  });
+  if (!r.ok) {
+    throw new Error(`update/refresh ${r.status}`);
+  }
+  return readMoonrakerBody<MoonrakerMachineUpdateStatus>(r);
+}
+
+/** POST /machine/update/upgrade — omit `name` to upgrade all registered items (Moonraker order). */
+export async function postMachineUpdateUpgrade(
+  baseUrl: string,
+  apiKey?: string,
+  name?: string,
+): Promise<void> {
+  const body = JSON.stringify(name ? { name } : {});
+  const r = await moonrakerFetch(baseUrl, "/machine/update/upgrade", {
+    apiKey,
+    method: "POST",
+    body,
+    extraHeaders: { "Content-Type": "application/json" },
+    timeoutMs: MOONRAKER_UPDATE_MUTATION_TIMEOUT_MS,
+  });
+  if (!r.ok) {
+    const errText = await r.text().catch(() => "");
+    throw new Error(`update/upgrade ${r.status}${errText ? `: ${errText.slice(0, 240)}` : ""}`);
+  }
+}
+
+export async function fetchServerFilesList(
+  baseUrl: string,
+  root: string,
+  apiKey?: string,
+): Promise<MoonrakerFileListEntry[]> {
+  const r = await moonrakerFetch(
+    baseUrl,
+    `/server/files/list?${new URLSearchParams({ root }).toString()}`,
+    { apiKey },
+  );
+  if (!r.ok) {
+    throw new Error(`files/list ${r.status}`);
+  }
+  const body = await readMoonrakerBody<{ dirs?: MoonrakerFileListEntry[]; files?: MoonrakerFileListEntry[] }>(
+    r,
+  );
+  const files = body.files ?? [];
+  const dirs = body.dirs ?? [];
+  return [...dirs, ...files];
+}
+
+/** Moonraker `logs` root → `klippy.log` via HTTP (may be denied by moonraker.conf). */
+export async function tryFetchKlippyLogTail(
+  baseUrl: string,
+  apiKey?: string,
+  maxBytes = 900_000,
+): Promise<string | null> {
+  try {
+    const list = await fetchServerFilesList(baseUrl, "logs", apiKey);
+    const hit = list.find((e) => {
+      const n = `${e.filename ?? ""} ${e.path ?? ""}`.toLowerCase();
+      return n.includes("klippy");
+    });
+    const rel =
+      (typeof hit?.path === "string" && hit.path) ||
+      (typeof hit?.filename === "string" ? `logs/${hit.filename}` : null);
+    if (!rel) {
+      return null;
+    }
+    const pathEnc = encodeURIComponent(rel.replace(/^\//, ""));
+    const r = await moonrakerFetch(baseUrl, `/server/files/path?path=${pathEnc}`, { apiKey });
+    if (!r.ok) {
+      return null;
+    }
+    const text = await r.text();
+    if (!text || text.length < 20) {
+      return null;
+    }
+    return text.length > maxBytes ? text.slice(-maxBytes) : text;
+  } catch {
+    return null;
+  }
 }
 
 /** Probe Moonraker; returns status code (200/401/…) without throwing on HTTP errors. */

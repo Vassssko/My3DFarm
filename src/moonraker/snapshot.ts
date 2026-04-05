@@ -1,4 +1,5 @@
 import {
+  fetchHistoryList,
   fetchObjectsList,
   fetchObjectsQuery,
   fetchPrinterInfo,
@@ -6,6 +7,7 @@ import {
   fetchServerInfoOutcome,
   normalizeBaseUrl,
 } from "./client";
+import type { MoonrakerHistoryJob } from "./types";
 import type { MoonrakerServerInfo } from "./types";
 
 export type CardStatus = "ready" | "printing" | "error" | "offline";
@@ -104,6 +106,20 @@ export function formatWaitDuration(sec: number, lang: string): string {
   return "< 1 мин";
 }
 
+/**
+ * Newest-first history list: first row with a finite end_time is the last finished job
+ * (skips in-progress rows with null end_time).
+ */
+export function pickLastCompletedPrintEndUnix(jobs: MoonrakerHistoryJob[]): number | null {
+  for (const j of jobs) {
+    const t = j.end_time;
+    if (typeof t === "number" && Number.isFinite(t) && t > 0) {
+      return t;
+    }
+  }
+  return null;
+}
+
 export type PrinterSnapshot = {
   status: CardStatus;
   hostname: string;
@@ -115,6 +131,8 @@ export type PrinterSnapshot = {
   isActivelyPrinting: boolean;
   /** For idle line: Klippy ready + not printing */
   isIdleReady: boolean;
+  /** Unix seconds when the last finished job ended (Moonraker /server/history/list); null if unknown */
+  lastPrintEndUnixSec: number | null;
   /** Set when status is offline — explains failed /server/info */
   offlineDetail?: "auth" | "unreachable" | "http";
   httpStatus?: number;
@@ -190,6 +208,7 @@ export async function buildPrinterSnapshot(
       printFilename: null,
       isActivelyPrinting: false,
       isIdleReady: false,
+      lastPrintEndUnixSec: null,
       offlineDetail,
       httpStatus,
       raw: {},
@@ -197,10 +216,11 @@ export async function buildPrinterSnapshot(
   }
   server = serverOutcome.data;
 
-  const [procResult, listResult, infoResult] = await Promise.allSettled([
+  const [procResult, listResult, infoResult, histResult] = await Promise.allSettled([
     fetchProcStats(normalized, apiKey),
     fetchObjectsList(normalized, apiKey),
     fetchPrinterInfo(normalized, apiKey),
+    fetchHistoryList(normalized, apiKey),
   ]);
 
   if (procResult.status === "fulfilled" && procResult.value.system_uptime != null) {
@@ -213,6 +233,11 @@ export async function buildPrinterSnapshot(
     klipperHostVersion = pi.software_version || "—";
     printerInfo = { state: pi.state, state_message: pi.state_message };
   }
+
+  const lastPrintEndUnixSec =
+    histResult.status === "fulfilled"
+      ? pickLastCompletedPrintEndUnix(histResult.value.jobs)
+      : null;
 
   const mcuNames =
     listResult.status === "fulfilled" ? mcuObjectNames(listResult.value.objects) : ["mcu"];
@@ -267,8 +292,69 @@ export async function buildPrinterSnapshot(
     printFilename: print_stats.filename && print_stats.filename.length > 0 ? print_stats.filename : null,
     isActivelyPrinting,
     isIdleReady,
+    lastPrintEndUnixSec,
     printerInfo,
     raw: { server, webhooks_state, print_stats },
   };
+}
+
+/** Lighter than full snapshot — for bulk “idle only” checks before Moonraker upgrade calls. */
+export type PrinterOperationalSnapshot =
+  | { reachable: false }
+  | {
+      reachable: true;
+      status: CardStatus;
+      isActivelyPrinting: boolean;
+      isIdleReady: boolean;
+    };
+
+export async function fetchPrinterOperationalState(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<PrinterOperationalSnapshot> {
+  const normalized = normalizeBaseUrl(baseUrl);
+  const serverOutcome = await fetchServerInfoOutcome(normalized, apiKey);
+  if (!serverOutcome.ok) {
+    return { reachable: false };
+  }
+  const server = serverOutcome.data;
+  let webhooks_state: string | undefined;
+  let print_stats: { state?: string; filename?: string } = {};
+  try {
+    const list = await fetchObjectsList(normalized, apiKey);
+    const mcuNames = mcuObjectNames(list.objects);
+    const queryPayload: Record<string, string[] | null> = {
+      webhooks: null,
+      print_stats: null,
+    };
+    for (const name of mcuNames) {
+      queryPayload[name] = ["mcu_version"];
+    }
+    const queried = await fetchObjectsQuery(normalized, queryPayload, apiKey);
+    const st = queried.status;
+    webhooks_state = pickWebhookState(st);
+    print_stats = pickPrintStats(st);
+  } catch {
+    webhooks_state = undefined;
+  }
+
+  const status = deriveCardStatus({
+    fetchFailed: false,
+    klippy_connected: server.klippy_connected,
+    klippy_state: server.klippy_state,
+    webhooks_state,
+    print_stats_state: print_stats.state,
+  });
+
+  const ps = print_stats.state;
+  const isActivelyPrinting = ps === "printing" || ps === "paused";
+  const isIdleReady =
+    status !== "offline" &&
+    status !== "error" &&
+    !isActivelyPrinting &&
+    webhooks_state === "ready" &&
+    server.klippy_state === "ready";
+
+  return { reachable: true, status, isActivelyPrinting, isIdleReady };
 }
 

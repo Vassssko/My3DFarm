@@ -23,6 +23,9 @@ void i18n
     supportedLngs: ["ru", "en", "de", "zh"],
     load: "languageOnly",
     interpolation: { escapeValue: false },
+    // Default react-i18next uses useSuspense: true and throws a Promise from useTranslation().
+    // This app has no Suspense boundary around routes — subtree would stay blank (white screen).
+    react: { useSuspense: false },
     detection: {
       // Manual override in localStorage; otherwise OS / browser (`navigator`).
       order: ["localStorage", "navigator"],

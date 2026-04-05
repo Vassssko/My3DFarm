@@ -3,6 +3,9 @@ import { Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
+import { hostFromMoonrakerBaseUrl, resolveEffectiveSsh } from "../lib/effectiveSsh";
+import { isTauri } from "../lib/isTauri";
+import { invokeSshDeployKey, invokeSshEnsureIdentity } from "../lib/sshInvoke";
 import {
   clearLocaleOverride,
   detectOsLanguage,
@@ -11,9 +14,13 @@ import {
   type AppLocale,
 } from "../lib/locale";
 import { applyThemeClass, getStoredThemeMode, setStoredThemeMode, type ThemeMode } from "../lib/theme";
+import { useBaselineStore } from "../store/baselineStore";
 import { useDeveloperStore } from "../store/developerStore";
 import { useFarmStore } from "../store/farmStore";
+import { usePrinterStore } from "../store/printerStore";
+import { useSshSettingsStore } from "../store/sshSettingsStore";
 import { DeveloperToolsPanel } from "./DeveloperToolsPanel";
+import { MassKeyDeployFeed, type MassDeployFeedItem } from "./MassKeyDeployFeed";
 import { Checkbox } from "./ui/Checkbox";
 
 const LOCALES: { code: AppLocale; labelKey: string }[] = [
@@ -33,6 +40,14 @@ export function AppSettings() {
   const developerMode = useDeveloperStore((s) => s.developerMode);
   const setDeveloperMode = useDeveloperStore((s) => s.setDeveloperMode);
   const [farmDraft, setFarmDraft] = useState(farmName);
+  const sshSettings = useSshSettingsStore();
+  const printers = usePrinterStore((s) => s.printers);
+  const updatePrinter = usePrinterStore((s) => s.updatePrinter);
+  const baseline = useBaselineStore();
+  const [massPw, setMassPw] = useState("");
+  const [massLog, setMassLog] = useState("");
+  const [massDeployFeed, setMassDeployFeed] = useState<MassDeployFeedItem[]>([]);
+  const [sshBusy, setSshBusy] = useState(false);
 
   const syncFromStorage = useCallback(() => {
     const o = getLocaleOverride();
@@ -88,7 +103,7 @@ export function AppSettings() {
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[210] bg-black/35 backdrop-blur-sm" />
-        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-[220] flex max-h-[min(85vh,40rem)] w-[min(100vw-2rem,26rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[24px] border border-[var(--glass-border)] p-6 shadow-[var(--card-shadow)] transition-all duration-300">
+        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-[220] flex max-h-[min(90vh,44rem)] w-[min(100vw-2rem,56rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[24px] border border-[var(--glass-border)] p-6 shadow-[var(--card-shadow)] transition-all duration-300">
           <Dialog.Title className="text-lg font-semibold text-[var(--text-primary)]">
             {t("settings.title")}
           </Dialog.Title>
@@ -144,6 +159,165 @@ export function AppSettings() {
                 <option value="light">{t("settings.themeLight")}</option>
                 <option value="dark">{t("settings.themeDark")}</option>
               </select>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-[var(--glass-border)]/60 bg-[var(--glass-bg)]/40 p-3">
+              <p className="text-sm font-medium text-[var(--text-primary)]">{t("settings.sshSection")}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--text-secondary)]" htmlFor="ssh-default-user">
+                    {t("settings.defaultSshUser")}
+                  </label>
+                  <input
+                    className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm"
+                    id="ssh-default-user"
+                    onChange={(e) => sshSettings.setDefaultSshUser(e.target.value)}
+                    value={sshSettings.defaultSshUser}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--text-secondary)]" htmlFor="ssh-default-port">
+                    {t("settings.defaultSshPort")}
+                  </label>
+                  <input
+                    className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm"
+                    id="ssh-default-port"
+                    onChange={(e) => sshSettings.setDefaultSshPort(Number(e.target.value) || 22)}
+                    type="number"
+                    value={sshSettings.defaultSshPort}
+                  />
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  checked={sshSettings.applyHostHintToUsername}
+                  id="ssh-hint-username"
+                  onCheckedChange={(on) => sshSettings.setApplyHostHintToUsername(Boolean(on))}
+                />
+                <label className="text-sm text-[var(--text-primary)]" htmlFor="ssh-hint-username">
+                  {t("settings.applyHostHintUsername")}
+                </label>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">{t("settings.hostHintsBlurb")}</p>
+              <button
+                className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={sshBusy || !isTauri()}
+                onClick={() => {
+                  setSshBusy(true);
+                  void invokeSshEnsureIdentity()
+                    .then(() => setMassLog(t("settings.sshIdentityReady")))
+                    .catch((e: unknown) =>
+                      setMassLog(e instanceof Error ? e.message : String(e)),
+                    )
+                    .finally(() => setSshBusy(false));
+                }}
+                type="button"
+              >
+                {t("settings.ensureSshIdentity")}
+              </button>
+              {massLog ? (
+                <p className="rounded-lg border border-[var(--glass-border)]/50 bg-[var(--glass-bg)]/30 px-2 py-1.5 text-[11px] text-[var(--text-primary)]">
+                  {massLog}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-[var(--glass-border)]/60 bg-[var(--glass-bg)]/40 p-3">
+              <p className="text-sm font-medium text-[var(--text-primary)]">{t("settings.massKeyTitle")}</p>
+              <p className="text-[11px] text-[var(--text-secondary)]">{t("settings.massKeyHint")}</p>
+              <input
+                autoComplete="off"
+                className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm"
+                onChange={(e) => setMassPw(e.target.value)}
+                placeholder={t("settings.massKeyPasswordPlaceholder")}
+                type="password"
+                value={massPw}
+              />
+              <button
+                className="rounded-xl border border-[var(--glass-border)] px-4 py-2 text-sm disabled:opacity-50"
+                disabled={sshBusy || !massPw || printers.length === 0 || !isTauri()}
+                onClick={() => {
+                  setSshBusy(true);
+                  setMassDeployFeed([]);
+                  void (async () => {
+                    try {
+                      for (let i = 0; i < printers.length; i++) {
+                        const p = printers[i]!;
+                        const e = resolveEffectiveSsh(
+                          p,
+                          {
+                            defaultSshUser: sshSettings.defaultSshUser,
+                            defaultSshPort: sshSettings.defaultSshPort,
+                            applyHostHintToUsername: false,
+                          },
+                          null,
+                        );
+                        const hostLabel =
+                          p.displayName?.trim() || hostFromMoonrakerBaseUrl(p.baseUrl);
+                        try {
+                          const r = await invokeSshDeployKey(
+                            { host: e.host, port: e.port, user: e.user },
+                            massPw,
+                          );
+                          if (r.ok) {
+                            updatePrinter(p.id, { sshKeyInstalled: true });
+                          }
+                          setMassDeployFeed((prev) => [
+                            ...prev,
+                            {
+                              id: `${p.id}-${i}-${Date.now()}`,
+                              sshHost: e.host,
+                              hostLabel,
+                              ok: r.ok,
+                              message: r.message,
+                            },
+                          ]);
+                        } catch (err) {
+                          setMassDeployFeed((prev) => [
+                            ...prev,
+                            {
+                              id: `${p.id}-${i}-err-${Date.now()}`,
+                              sshHost: e.host,
+                              hostLabel,
+                              ok: false,
+                              message: err instanceof Error ? err.message : String(err),
+                            },
+                          ]);
+                        }
+                      }
+                      setMassPw("");
+                    } catch (e: unknown) {
+                      setMassDeployFeed((prev) => [
+                        ...prev,
+                        {
+                          id: `fatal-${Date.now()}`,
+                          sshHost: "—",
+                          hostLabel: t("errors.network"),
+                          ok: false,
+                          message: e instanceof Error ? e.message : String(e),
+                        },
+                      ]);
+                    } finally {
+                      setSshBusy(false);
+                    }
+                  })();
+                }}
+                type="button"
+              >
+                {t("settings.massKeyRun")}
+              </button>
+              <MassKeyDeployFeed items={massDeployFeed} />
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-[var(--glass-border)]/60 bg-[var(--glass-bg)]/40 p-3">
+              <p className="text-sm font-medium text-[var(--text-primary)]">{t("settings.baselineSection")}</p>
+              <input
+                className="w-full rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-2 text-sm"
+                onChange={(e) => baseline.setProfileName(e.target.value)}
+                placeholder={t("settings.baselineProfilePlaceholder")}
+                value={baseline.profileName}
+              />
+              <p className="text-[11px] text-[var(--text-secondary)]">{t("settings.baselineHint")}</p>
             </div>
 
             <div className="flex items-start gap-3 rounded-xl border border-[var(--glass-border)]/60 bg-[var(--glass-bg)]/50 p-3">

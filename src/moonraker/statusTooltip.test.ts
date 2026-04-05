@@ -13,6 +13,7 @@ function baseSnap(over: Partial<PrinterSnapshot>): PrinterSnapshot {
     printFilename: null,
     isActivelyPrinting: false,
     isIdleReady: true,
+    lastPrintEndUnixSec: null,
     raw: {},
     ...over,
   };

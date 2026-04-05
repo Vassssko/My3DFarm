@@ -1,6 +1,7 @@
 import { clearDebugEvents } from "../lib/debugRingBuffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  mockHistoryListOneCompleted,
   mockObjectsList,
   mockObjectsQueryPrinting,
   mockObjectsQueryReady,
@@ -14,6 +15,7 @@ import {
   deriveCardStatus,
   formatSystemUptime,
   formatWaitDuration,
+  pickLastCompletedPrintEndUnix,
   type StatusDerivationInput,
 } from "./snapshot";
 
@@ -114,6 +116,21 @@ describe("formatWaitDuration", () => {
   });
 });
 
+describe("pickLastCompletedPrintEndUnix", () => {
+  it("skips in-progress row and returns latest end_time", () => {
+    const end = pickLastCompletedPrintEndUnix([
+      { job_id: "02", end_time: null, status: "in_progress" },
+      { job_id: "01", end_time: 1_700_000_000, status: "completed" },
+    ]);
+    expect(end).toBe(1_700_000_000);
+  });
+
+  it("returns null when no finished jobs", () => {
+    expect(pickLastCompletedPrintEndUnix([{ end_time: null }])).toBeNull();
+    expect(pickLastCompletedPrintEndUnix([])).toBeNull();
+  });
+});
+
 function installMoonrakerFetchMock(
   queryBody: typeof mockObjectsQueryReady | typeof mockObjectsQueryPrinting,
 ) {
@@ -135,6 +152,9 @@ function installMoonrakerFetchMock(
     }
     if (path === "/printer/objects/query" && init?.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify(queryBody), { status: 200 }));
+    }
+    if (path === "/server/history/list") {
+      return Promise.resolve(new Response(JSON.stringify(mockHistoryListOneCompleted), { status: 200 }));
     }
     return Promise.resolve(new Response("not found", { status: 404 }));
   });
@@ -186,6 +206,7 @@ describe("buildPrinterSnapshot", () => {
     expect(snap.mcuVersions.length).toBeGreaterThan(0);
     expect(snap.printFilename).toBeNull();
     expect(snap.isIdleReady).toBe(true);
+    expect(snap.lastPrintEndUnixSec).toBe(1_700_003_600);
   });
 
   it("maps ready printer when API wraps payloads in { result } (Moonraker 1.5+)", async () => {
