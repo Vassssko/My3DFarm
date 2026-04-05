@@ -69,7 +69,20 @@ npm run test
 npm run test:all   # перед релизным мержем по возможности
 ```
 
+## Release Please: ошибка «not permitted to create or approve pull requests»
+
+В репозитории GitHub включите запись для Actions и создание PR:
+
+1. **Settings** → **Actions** → **General**
+2. **Workflow permissions**: выберите **Read and write permissions**
+3. Включите **Allow GitHub Actions to create and approve pull requests**
+
+После сохранения перезапустите упавший workflow (**Actions** → выбранный run → **Re-run jobs**) или сделайте пустой коммит на `main`.
+
+У организаций иногда эти пункты задаёт политика org — см. [обсуждение](https://stackoverflow.com/questions/72376229).
+
 ## Ссылки
 
 - [Release Please](https://github.com/googleapis/release-please) — как устроены Release PR и теги
+- [googleapis/release-please-action](https://github.com/googleapis/release-please-action) — официальный Action
 - [Semver](https://semver.org/lang/ru/)
