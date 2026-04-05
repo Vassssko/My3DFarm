@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/Vassssko/My3DFarm/compare/v0.1.1...v0.1.2) (2026-04-05)
+
+
+### Features
+
+* **farm:** printer hub, fleet ops, SSH, native Moonraker proxy ([e9e683b](https://github.com/Vassssko/My3DFarm/commit/e9e683b1ad0ffcd2a0f856e2651f542faf625087))
+
 ## [0.1.1](https://github.com/Vassssko/My3DFarm/compare/v0.1.0...v0.1.1) (2026-04-05)
 
 
