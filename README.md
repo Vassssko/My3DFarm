@@ -1,4 +1,8 @@
-﻿# My3DFarm
+﻿<p align="center">
+  <img src=".github/my3dfarm-logo.png" width="128" height="128" alt="My3DFarm logo" />
+</p>
+
+# My3DFarm
 
 Desktop app to manage multiple **Klipper** printers through the **Moonraker** HTTP API. Built with **Tauri 2**, **React 19**, **TypeScript**, **Vite**, **Tailwind CSS**, **Zustand**, and **react-i18next** (`en`, `ru`, `de`, `zh`).
 
