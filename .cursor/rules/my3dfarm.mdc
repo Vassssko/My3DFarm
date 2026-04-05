@@ -1,0 +1,167 @@
+---
+description: My3DFarm — Tauri, React, TS, Moonraker, Liquid Glass UI, i18n
+alwaysApply: true
+---
+
+# Project
+
+- **Type**: Tauri app
+- **Language**: TypeScript
+- **UI**: React
+- **Styling**: Tailwind CSS + Framer Motion
+- **Components**: Radix UI (accessibility) + custom glass styling
+- **Icons**: lucide-react (SF-like)
+- **State**: Zustand
+
+## Context
+
+- Desktop app to manage multiple **Klipper** printers via **Moonraker API**.
+- **Moonraker HTTP API reference**: [external API docs](https://moonraker.readthedocs.io/en/latest/external_api/).
+- **Klipper `printer.cfg` reference** (sections and parameters): [Configuration reference](https://www.klipper3d.org/Config_Reference.html).
+- **CAN bus setup, flashing, updates, troubleshooting** (Klipper printers): [Esoterical’s CANBus Guide](https://canbus.esoterical.online/).
+- **Primary platform**: **Windows** (main product focus).
+- **Release builds** also target **macOS (Apple Silicon)** and **Linux** on **Debian 12+** with **GNOME** (validate UI and packaging there).
+- Users add printers by **IP** and **API key**.
+
+---
+
+## Design system: Liquid Glass (iOS-style)
+
+Use **CSS variables** for all theme colors; avoid hard-coded one-off hex in components except mapped tokens.
+
+### Light theme tokens
+
+| Token | Value |
+|-------|--------|
+| `background` | `rgba(245, 245, 247, 0.85)` |
+| `glass_background` | `rgba(255, 255, 255, 0.72)` |
+| `glass_border` | `rgba(255, 255, 255, 0.5)` |
+| `text_primary` | `#1C1C1E` |
+| `text_secondary` | `#3A3A3C` |
+| `accent` | `#007AFF` |
+| `accent_glow` | `rgba(0, 122, 255, 0.3)` |
+| `warning` | `#FF3B30` |
+| `success` | `#34C759` |
+| `card_shadow` | `0 8px 32px rgba(0, 0, 0, 0.08)` |
+
+### Dark theme tokens
+
+| Token | Value |
+|-------|--------|
+| `background` | `rgba(0, 0, 0, 0.85)` |
+| `glass_background` | `rgba(28, 28, 30, 0.72)` |
+| `glass_border` | `rgba(56, 56, 58, 0.5)` |
+| `text_primary` | `#FFFFFF` |
+| `text_secondary` | `#8E8E93` |
+| `accent` | `#0A84FF` |
+| `accent_glow` | `rgba(10, 132, 255, 0.3)` |
+| `card_shadow` | `0 8px 32px rgba(0, 0, 0, 0.3)` |
+
+### Global UI
+
+- **Fonts**: system stack — `-apple-system`, SF Pro Text, Helvetica Neue, sans-serif.
+- **Cards**: `backdrop-blur-xl` (blur ~20–40px effective), glass bg/border from tokens.
+- **Transitions**: `transition-all duration-300 ease-in-out` as default where it fits.
+- **Radius**: cards **20px**, buttons **12px**, modals **24px**.
+- **Card hover**: `translateY(-2px)` + stronger shadow.
+- **Accent controls**: subtle glow via `box-shadow` using accent / `accent_glow`.
+- **Pure #000 / #fff**: avoid for large surfaces — prefer token rgba glass colors.
+
+### Viewport and scrolling (desktop / Tauri)
+
+- **No document-level scrolling** for main app chrome: chain height from `html` → `body` → `#root` (`height: 100%`, `min-height: 0` where needed), keep the shell `overflow: hidden`, and scroll **inside** explicit panes only (lists, log areas, long grids).
+- Avoid `min-h-screen` on primary layouts when content can grow without bound; prefer `h-full min-h-0` on flex children so nested `overflow-y-auto` gets a bounded height.
+- Flex columns with a scrolling child: parent `flex flex-col min-h-0`, scrollable region `flex-1 min-h-0 overflow-y-auto` (classic fix for flex overflow clipping).
+
+### Glass morphism
+
+- Page/shell: semi-transparent + blur.
+- Cards: opacity **0.7–0.8**, `backdrop-blur`, border opacity **0.2–0.5**.
+- Depth: layered shadows; subtle inner highlights where appropriate.
+- **Primary actions** (e.g. Connect): optional **gradient border** for emphasis.
+
+### Theme behavior
+
+- Respect **system** theme via `matchMedia('(prefers-color-scheme: dark)')`.
+- **User preference**: `system | light | dark` in **localStorage**.
+- Smooth **CSS transitions** on `background`, `border-color`, `shadow` when switching themes.
+
+### Animations (Framer Motion + Tailwind)
+
+- **Tap** (e.g. card): scale **0.98** for **~100ms**.
+- **Enter**: fade-in + slide-up (**y: 10 → 0**, **~0.3s**).
+- **Data refresh**: brief **animate-pulse** ~**1s** where appropriate.
+- **Route / view change**: cross-fade (**opacity 0 → 1**).
+- **Button hover**: slightly brighter + soft shadow increase.
+
+### Tailwind extensions (config)
+
+- `backdropBlur`: `xs: 2px`, `sm: 8px`, `md: 12px`, `lg: 20px`, `xl: 32px`
+- `boxShadow`: `glass`, `glass-lg` (see tokens / soft elevation)
+- Keyframes: `fade-in`, `slide-up` (~0.3s) as utilities
+
+### Component specs
+
+**PrinterCard**
+
+- Glass card + blur.
+- Status: **glowing** dot (green / yellow / red).
+- Klipper/Moonraker versions: small text + info icon.
+- Actions: gear (settings).
+- **Offline**: dimmed + “Offline” (i18n).
+
+**Sidebar / menu**
+
+- Width **260px**, glass panel.
+- Icon + label; hover: accent highlight.
+- Active item: bg ~**0.2** opacity + accent.
+
+**StatusBadge**
+
+- Minimal, **20px** radius.
+- Online `#34C759`, Busy yellow, Error red.
+- Subtle **pulse** when printing is active.
+
+### CSS variables (map in `:root` / `.dark`)
+
+Light example: `--bg-primary`, `--glass-bg`, `--glass-border`, `--text-primary`, `--accent` matching the tables above; dark block overrides for `.dark`.
+
+---
+
+## i18n (react-i18next)
+
+- **Locales**: `ru`, `en`, `de`, `zh` — **default and fallback: `en`** (first launch and missing keys).
+- **Detection**: system + user override; persist in **localStorage** (user-chosen locale overrides default).
+- **Namespaces**: `common` (Save, Cancel, Connect), `printer`, `settings`, `errors`.
+- Use **`Trans`** for copy with markup; translate placeholders; support **pluralization** (e.g. 1 vs N printers).
+
+---
+
+## Code generation
+
+- **Functional** React + hooks.
+- Styles: **Tailwind**; use **inline styles** only where needed for dynamic motion values (or Framer props).
+- **Type** all Moonraker JSON responses.
+- **HTTP**: **`fetch` with ~10s timeout** to printers (farm / parallel load).
+- **Printer state**: **Zustand** global store.
+- **Responsive grid**: mobile **1** col, tablet **2**, desktop **3–4**.
+- **Comments**: English. **Logs** (if any): Russian.
+
+## Tauri
+
+- Rust commands only for **filesystem** or **system/process** needs.
+- Moonraker from **frontend** (no CORS issue in Tauri webview context).
+
+## Git / GitHub
+
+- **`.gitkeep`** in empty tracked dirs.
+- Never commit **`.env`** / secrets.
+- **README**: installer build instructions.
+
+## Testing
+
+- **Unit (Vitest)** — `src/**/*.test.ts`: чистые функции (`snapshot`, `deriveCardStatus`, `formatWaitDuration`), HTTP-клиент (`normalizeBaseUrl`, `probeMoonraker` с моком `fetch`), `theme` / `locale`, Zustand `printerStore` (без реального Moonraker).
+- **Smoke E2E (Playwright)** — `e2e/smoke.spec.ts`: первый запуск, настройки; быстрый прогон без мока принтера.
+- **E2E с моком Moonraker** — `e2e/*-mock.spec.ts` + `e2e/helpers/`: `page.route` на **`http://192.0.2.1:7125`** (TEST-NET-1), фикстуры в `src/test/moonrakerFixtures.ts` (ответы как у [Moonraker HTTP API](https://moonraker.readthedocs.io/en/latest/external_api/)); в `localStorage` сидится persist Zustand `my3dfarm-printers`.
+- Новая фича: минимум **юнит** на логику + **smoke или e2e** на пользовательский путь; сеть Moonraker только через **моки**, не хардкодить реальные IP фермы в тестах.
+- Команды: `npm run test`, `npm run test:e2e`, `npm run test:all`.

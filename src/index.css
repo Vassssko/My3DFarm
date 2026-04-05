@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    height: 100%;
+  }
+
+  :root {
+    --bg-primary: rgba(245, 245, 247, 0.85);
+    --glass-bg: rgba(255, 255, 255, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --text-primary: #1c1c1e;
+    --text-secondary: #3a3a3c;
+    --accent: #007aff;
+    --accent-glow: rgba(0, 122, 255, 0.3);
+    --warning: #ff3b30;
+    --success: #34c759;
+    --printing: #ff9500;
+    --offline: #8e8e93;
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  }
+
+  .dark {
+    --bg-primary: rgba(0, 0, 0, 0.85);
+    --glass-bg: rgba(28, 28, 30, 0.72);
+    --glass-border: rgba(56, 56, 58, 0.5);
+    --text-primary: #ffffff;
+    --text-secondary: #8e8e93;
+    --accent: #0a84ff;
+    --accent-glow: rgba(10, 132, 255, 0.3);
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  body {
+    background: var(--bg-primary);
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    font-family:
+      -apple-system,
+      'SF Pro Text',
+      'Helvetica Neue',
+      sans-serif;
+    color: var(--text-primary);
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 0;
+  }
+
+  /* Glass morphism base */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    transition: all 0.3s ease;
+  }
+
+  .glass-interactive:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  }
+
+  .dark .glass-interactive:hover {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  /* Farm grid reflow: Framer Motion blocks layout animation on window resize; View Transitions handle tile moves. */
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-group(*) {
+      animation-duration: 0.38s;
+      animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+  }
+}
