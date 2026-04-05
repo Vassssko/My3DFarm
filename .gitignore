@@ -17,6 +17,10 @@ dist
 dist-ssr
 *.local
 
+# Cursor / local AI assistant (not shared in repo)
+.cursor/
+CLAUDE.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
